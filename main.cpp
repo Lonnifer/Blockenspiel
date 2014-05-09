@@ -304,15 +304,15 @@ void Blockenspiel::paint(SDL_Surface *s){
                                 "Still, I hope you liked the game! If you're some kind of masochist,",
                                 "and you're still itching for more levels, please make your own!",
                                 "The map file is in a simple text format, and you can edit it with notepad.",
-                                "Send me your cool homemade levels, and I'll include them in the next"
+                                "Send me your cool homemade levels, and I'll include them in the next",
                                 "version of the game.",
                                 "",
-                                "For feedback, level suggestions, love letters, death threats, "
-                                "Nigerian prince scams, etc, please email me at ashenfie@gmail.com"
-                                ""
-                                "-Alon Shenfield"
+                                "For feedback, level suggestions, love letters, death threats, ",
+                                "Nigerian prince scams, etc, please email me at ashenfie@gmail.com",
+                                "",
+                                "-Alon Shenfield",
                                 };
-                drawTextBoxCentered(s, tb, 17, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]);            
+                drawTextBox(s, tb, 17, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]);            
             }
 		} else if (state == MSG_LEVELFAILED){
             string tb[] = {"Unmatched block remaining!", "Level failed", " ", "Undo last move or retry level..."};
@@ -421,8 +421,10 @@ void Blockenspiel::drawblock(int x, int y, int z, SDL_Surface *s){
         
         blitSurface(blockImgs[block-1], s, drawX, drawY);
         //cout << map->nearestBlockCoordSum << " "<< map->nearestBlockCoordSum*4 << " " << map->nearestBlockCoordSum*4 - (x+y+z)*4 << endl;
-		SDL_SetAlpha(blockDarkenImgs[block-1], SDL_SRCALPHA, (map->nearestBlockCoordSum - (x+y+z))*10);
-		blitSurface(blockDarkenImgs[block-1],s,drawX,drawY);
+        if(map->nearestBlockCoordSum > x+y+z){
+		    SDL_SetAlpha(blockDarkenImgs[block-1], SDL_SRCALPHA, (map->nearestBlockCoordSum - (x+y+z))*10);
+		    blitSurface(blockDarkenImgs[block-1],s,drawX,drawY);
+        }
 
 		//draw white-outing blocks
 		if (state == REMOVING_BLOCKS && removeGroup->getData(x,y,z) != 0){
@@ -612,13 +614,11 @@ void Blockenspiel::handleMouseClick(int x, int y){
 	    	case MSG_LEVELFINISHED:
 			    state = FADE_OUT; 
                 levelAfterFade = level + 1;
+                if(levelAfterFade == numLevels){
+                    levelAfterFade = -1; //back to level select screen
+                }
                 kickAnimationThread();
                 break;
-                /*if(level == numLevels){
-                    //TODO: you win the game
-                    cout << "you win!" << endl;
-                    break;
-                }*/
     		case MSG_LEVELFAILED:
                 delete map;
 		    	map = new LevelMap(*levelMaps[level]);

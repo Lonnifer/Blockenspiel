@@ -178,9 +178,12 @@ void drawTextBox(SDL_Surface *dst, const string s[], int numLines, TTF_Font *fon
     SDL_FreeSurface(bg);
 
     for(int i=0; i<numLines; i++){
-        blitSurface(textImgs[i], dst, x+4 ,y+h*i);
-        SDL_FreeSurface(textImgs[i]);
+        if(textImgs[i]){
+            blitSurface(textImgs[i], dst, x+4 ,y+h*i);
+            SDL_FreeSurface(textImgs[i]);
+        }
     }
+    delete [] textImgs;
 }
 
 void drawTextBoxCentered(SDL_Surface *dst, const string s[], int numLines, TTF_Font *font, int x, int y){
@@ -200,7 +203,10 @@ void drawTextBoxCentered(SDL_Surface *dst, const string s[], int numLines, TTF_F
     SDL_FreeSurface(bg);
 
     for(int i=0; i<numLines; i++){
-        blitSurface(textImgs[i], dst, x-textImgs[i]->w/2 ,y+h*i);
-        SDL_FreeSurface(textImgs[i]);
+        if(textImgs[i]){
+            blitSurface(textImgs[i], dst, x-textImgs[i]->w/2 ,y+h*i);
+            SDL_FreeSurface(textImgs[i]);
+        }
     }
+    delete [] textImgs;
 }
