@@ -58,9 +58,6 @@ void Blockenspiel::init(){
 
 	//load images
     texMapImg = getImage("texmap.gif");
-	msgLevelCompleteImg = getImage("MsgBoxLevelComplete.gif");
-	msgFailedImg = getImage("MsgBoxLevelFailed.gif");
-    arrowImg = getImage("arrow.gif");
     for (int i=0; i<NUM_BLOCK_TYPES; i++){
 		blockImgs[i] = getImageFromTexMap(texMapImg, (i % 16)*TILESIZE, (i / 16)*TILESIZE, TILESIZE, TILESIZE);
         //fill out a black mask of this bitmap, so we can darken it
@@ -87,6 +84,7 @@ void Blockenspiel::init(){
     blockWhiteImg = getImageFromTexMap(texMapImg, 2*TILESIZE, 3*TILESIZE, TILESIZE, TILESIZE);
     logoImg = getImageFromTexMap(texMapImg, 0, 4*TILESIZE, 600, 247);
     backgroundImg = getImageFromTexMap(texMapImg, 600, 4*TILESIZE, 555, 553);
+    arrowImg = getImageFromTexMap(texMapImg, 1155, 4*TILESIZE, 64, 497);
     InGameMenu = getImageFromTexMap(texMapImg, 0, 4*TILESIZE+247, 492, 100);
 
     fadeImg = createSurface(screenImg->w, screenImg->h);
@@ -296,23 +294,24 @@ void Blockenspiel::paint(SDL_Surface *s){
             } else {
                 string tb[] = { "Way to go, you finished the game!", 
                                 "",
-                                "Kind of anticlimatic, isn't it?",
-                                "No final boss, no epic ending sequence, just a boring old text box :(",
-                                "Sorry, I'm not Nintendo. I can't be bothered to make a fancy ending.",
-                                "I'm just one guy, and I have a day job, you know.",
+                                "Kind of anticlimatic, isn't it? No final boss, no",
+                                "epic ending sequence, just a boring old text box :(",
+                                "Sorry, I'm not Nintendo. I can't be bothered to make",
+                                "a fancy ending. I'm just one guy, and I have a",
+                                "day job, you know.",
                                 "",
-                                "Still, I hope you liked the game! If you're some kind of masochist,",
-                                "and you're still itching for more levels, please make your own!",
-                                "The map file is in a simple text format, and you can edit it with notepad.",
-                                "Send me your cool homemade levels, and I'll include them in the next",
+                                "Still, I hope you liked the game! If you're some kind",
+                                "of masochist, and you're still itching for more levels,",
+                                "please make your own! The map file is in a simple text",
+                                "format, and you can edit it with notepad. Send me your",
+                                "cool homemade levels, and I'll include them in the next",
                                 "version of the game.",
                                 "",
-                                "For feedback, level suggestions, love letters, death threats, ",
-                                "Nigerian prince scams, etc, please email me at ashenfie@gmail.com",
-                                "",
-                                "-Alon Shenfield",
+                                "For feedback, level suggestions, love letters, death",
+                                "threats, Nigerian prince scams, etc, please email me",
+                                "at ashenfie@gmail.com"
                                 };
-                drawTextBox(s, tb, 17, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]);            
+                drawTextBox(s, tb, 18, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]/2);            
             }
 		} else if (state == MSG_LEVELFAILED){
             string tb[] = {"Unmatched block remaining!", "Level failed", " ", "Undo last move or retry level..."};
@@ -550,7 +549,7 @@ void Blockenspiel::handleMouseClick(int x, int y){
                 kickAnimationThread();
 		    	return;
     		case 4:  //next level
-	    		if (level==numLevels) break;
+                if (level==numLevels-1) break;
 			    state = FADE_OUT; 
                 levelAfterFade = level + 1;
                 kickAnimationThread();
@@ -756,10 +755,10 @@ int Blockenspiel::animationThreadFcn() {
             while(state == LEVSEL_MOUSE_INSCROLLZONE) {
                 SDL_GetMouseState(&x,&y);
                 if(y < 40) {
-                   levsel_scrollOffset -= (40-y) / 2;
+                   levsel_scrollOffset -= (40-y) / 4;
                    if(levsel_scrollOffset < 0) levsel_scrollOffset = 0;
                 } else if (screenImg->h - y < 40) {
-                   levsel_scrollOffset += (40-(screenImg->h - y)) / 2;
+                   levsel_scrollOffset += (40-(screenImg->h - y)) / 4;
                    if(levsel_scrollOffset > maxScroll) levsel_scrollOffset = maxScroll;        
                 }
                 kickPaintThread(); 

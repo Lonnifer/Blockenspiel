@@ -173,7 +173,6 @@ class Blockenspiel {
 	SDL_Surface *blockImgs[NUM_BLOCK_TYPES];
     SDL_Surface *blockDarkenImgs[NUM_BLOCK_TYPES];
 	SDL_Surface *selectorImg, *highlightImg, *blockWhiteImg;
-	SDL_Surface *msgLevelCompleteImg, *msgFailedImg;
 	SDL_Surface *InGameMenu;
 	SDL_Surface *backgroundImg;
     SDL_Surface *arrowImg;
