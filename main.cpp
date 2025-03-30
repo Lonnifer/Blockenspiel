@@ -1,19 +1,34 @@
-#include <string.h>
+#include <string>
 #include <vector>
-#include <SDL/SDL.h>
-#include <SDL/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_ttf.h>
 #include <sstream> 
 #include "blockedin.hpp"
 #include <stdio.h>
 #include <fstream>
 #include <ctime>
 using namespace std;
- 
-int main(int argc, char *argv[]) {
+
+// Initialize the global logger instance
+Logger gLogger;
+
+// Define lprint as a macro that uses the global logger instance
+#define lprint gLogger
+
+// SDL2 requires this specific main signature
+#ifdef __WIN32__
+#undef main
+extern "C" int main(int argc, char *argv[])
+#else
+extern "C" int main(int argc, char *argv[])
+#endif
+{
     Blockenspiel b;
     b.init(); 
     b.run();
 
+    // Clean up TTF before SDL
+    TTF_Quit();
     SDL_Quit();
  
     return 0;
@@ -25,22 +40,41 @@ string Blockenspiel::menuItemDescriptions[5] = { "restart level","undo move","pr
 
 void Blockenspiel::init(){
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER )<0) {
-        cerr << "Failed SDL_Init " << SDL_GetError() << endl;
+        lprint << "Failed SDL_Init " << SDL_GetError() << endl;
         return;
     }
 
-    SDL_WM_SetCaption("Blockenspiel", "Blockenspiel");
-
-    if(TTF_Init() == -1){
-        cerr << "Failed TTF_Init " << TTF_GetError() << endl;
+    // In SDL2, SDL_WM_SetCaption is replaced with SDL_CreateWindow which handles the window title
+    window = SDL_CreateWindow("Blockenspiel",
+                          SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                          600, 650, SDL_WINDOW_SHOWN);
+    if (window == NULL) {
+        lprint << "Failed to create window: " << SDL_GetError() << endl;
+        SDL_Quit();
+        return;
+    }
+    
+    // Create renderer for the window
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == NULL) {
+        lprint << "Failed to create renderer: " << SDL_GetError() << endl;
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return;
+    }
+    
+    // Create a surface for the window
+    screenImg = SDL_GetWindowSurface(window);
+    if(screenImg == NULL) {
+        lprint << "Failed to get window surface: " << SDL_GetError() << endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
         SDL_Quit();
         return;
     }
 
-    screenImg = SDL_SetVideoMode(600,650,32,SDL_HWSURFACE | SDL_DOUBLEBUF);
-    cout << "w " << screenImg->w << endl;
-    if(screenImg == NULL) {
-        cerr << "Failed SDL_SetVideoMode: " << SDL_GetError() << endl;
+    if(TTF_Init() == -1){
+        lprint << "Failed TTF_Init " << TTF_GetError() << endl;
         SDL_Quit();
         return;
     }
@@ -51,7 +85,7 @@ void Blockenspiel::init(){
     //load font
     font = TTF_OpenFont("font.ttf", 14);
     if (font == NULL) {
-        cerr << "Unable to load font. error " << TTF_GetError() << endl;
+        lprint << "Unable to load font. error " << TTF_GetError() << endl;
         SDL_Quit();
         return;
     }
@@ -62,17 +96,21 @@ void Blockenspiel::init(){
 		blockImgs[i] = getImageFromTexMap(texMapImg, (i % 16)*TILESIZE, (i / 16)*TILESIZE, TILESIZE, TILESIZE);
         //fill out a black mask of this bitmap, so we can darken it
         blockDarkenImgs[i] = createSurface(TILESIZE, TILESIZE);
-        SDL_SetColorKey( blockDarkenImgs[i], SDL_RLEACCEL | SDL_SRCCOLORKEY, 0xffffffff );
+        SDL_SetColorKey(blockDarkenImgs[i], SDL_TRUE, 0xffffffff);
 
         SDL_LockSurface(blockImgs[i]);
         SDL_LockSurface(blockDarkenImgs[i]);
         for(int x=0; x<blockImgs[i]->w; x++){
             for(int y=0; y<blockImgs[i]->h; y++){
-
-                if((*getPixelPtr(blockImgs[i], x, y)) != blockImgs[i]->format->colorkey){
+                // Check if pixel is transparent by using SDL_GetColorKey in SDL2
+                Uint32 colorKey;
+                SDL_GetColorKey(blockImgs[i], &colorKey);
+                if((*getPixelPtr(blockImgs[i], x, y)) != colorKey){
                     *getPixelPtr(blockDarkenImgs[i], x, y) = 0;
                 } else {
-                    *getPixelPtr(blockDarkenImgs[i], x, y) = blockDarkenImgs[i]->format->colorkey;
+                    // Use SDL_GetColorKey for blockDarkenImgs
+                    SDL_GetColorKey(blockDarkenImgs[i], &colorKey);
+                    *getPixelPtr(blockDarkenImgs[i], x, y) = colorKey;
                 }
             }
         }
@@ -101,9 +139,9 @@ void Blockenspiel::init(){
     }
 
     //read all the levels
-	ifstream mapfile ("map.txt");
+	std::ifstream mapfile ("map.txt");
     if (!mapfile.is_open()){
-        cerr << "failed to open map!" << endl;
+        lprint << "failed to open map!" << endl;
         return;
     }
 
@@ -178,18 +216,19 @@ void Blockenspiel::run(){
 
     repaintCVLock = SDL_CreateMutex();
     repaintCV = SDL_CreateCond();
-    paintThread = SDL_CreateThread( paintThreadEntry, this );
+    paintThread = SDL_CreateThread(paintThreadEntry, "PaintThread", this);
 
     animateCVLock = SDL_CreateMutex();
     animateCV = SDL_CreateCond();
-    animationThread = SDL_CreateThread( animationThreadEntry, this );
+    animationThread = SDL_CreateThread(animationThreadEntry, "AnimationThread", this);
 
     kickPaintThread();
 
-    while(1) {
+    bool quit = false;
+    while(!quit) {
         SDL_Event event;
         if(SDL_WaitEvent(&event)) {
-            SDL_mutexP( stateLock );
+            SDL_mutexP(stateLock);
             switch (event.type) {
                 case SDL_MOUSEMOTION:
                     if(handleMouseMotion(event.motion.x, event.motion.y)) {
@@ -203,17 +242,24 @@ void Blockenspiel::run(){
                     }
                     break;
                 case SDL_KEYDOWN:
-                    if(event.key.keysym.sym == SDLK_q ) {
-                        SDL_Quit();
-                        return;
+                    if(event.key.keysym.sym == SDLK_q) {
+                        quit = true;
                     }
                     break;
                 case SDL_QUIT:
-                    SDL_Quit();
-                    return;
+                    quit = true;
+                    break;
             }
-            SDL_mutexV( stateLock );
+            SDL_mutexV(stateLock);
         }
+    }
+    
+    // Clean up SDL resources
+    if (renderer) {
+        SDL_DestroyRenderer(renderer);
+    }
+    if (window) {
+        SDL_DestroyWindow(window);
     }
 }
 
@@ -223,20 +269,22 @@ int Blockenspiel::paintThreadEntry(void *data) {
 
 int Blockenspiel::paintThreadFcn() {
     for(;;) {
-        SDL_mutexP( repaintCVLock );
+        SDL_mutexP(repaintCVLock);
 
         //repaintRequest+repaintCV will get signaled when we need to repaint.  
         while(!repaintRequest) {
-            SDL_CondWait( repaintCV, repaintCVLock );
+            SDL_CondWait(repaintCV, repaintCVLock);
         }
         //cout <<"paint thread: repaint" <<endl;
         repaintRequest = false; //signal that we've received the request and are processing.
-        SDL_mutexV( repaintCVLock );
+        SDL_mutexV(repaintCVLock);
  
-        SDL_mutexP( stateLock );
+        SDL_mutexP(stateLock);
         paint(screenImg);
-        SDL_mutexV( stateLock );
-        SDL_Flip(screenImg);
+        SDL_mutexV(stateLock);
+        
+        // In SDL2, SDL_Flip is replaced with SDL_UpdateWindowSurface
+        SDL_UpdateWindowSurface(window);
     }
 }
 
@@ -246,9 +294,9 @@ void Blockenspiel::paint(SDL_Surface *s){
         blitSurface(logoImg, s, 0, - levsel_scrollOffset);
         for (int i=0;i<numLevels;i++){
             if(levsel_underMouseThumb == i){
-                SDL_SetAlpha(levsel_levelThumbs[i], SDL_SRCALPHA, 255);
+                SDL_SetSurfaceAlphaMod(levsel_levelThumbs[i], 255);
             } else {
-                SDL_SetAlpha(levsel_levelThumbs[i], SDL_SRCALPHA, 128); 
+                SDL_SetSurfaceAlphaMod(levsel_levelThumbs[i], 128); 
             }
             int x = (i % LEVSEL_THUMBS_PER_ROW) * LEVSEL_THUMB_W,
                 y = (i / LEVSEL_THUMBS_PER_ROW) * LEVSEL_THUMB_H + logoImg->h - levsel_scrollOffset;
@@ -279,7 +327,7 @@ void Blockenspiel::paint(SDL_Surface *s){
 		drawText(s, str, font, menu_x+20, 0);
 		blitSurface(InGameMenu, s, menu_x, menu_y);
 		if (highlightedmenuitem!=0){
-			SDL_SetAlpha(blockWhiteImg, SDL_SRCALPHA, 128);
+			SDL_SetSurfaceAlphaMod(blockWhiteImg, 128);
 			blitSurface(blockWhiteImg, s, menu_x+menuitem_x[highlightedmenuitem-1], menu_y+menuitem_y[highlightedmenuitem-1]);
             drawTextCentered(s, menuItemDescriptions[highlightedmenuitem-1], font, 
                             menu_x+menuitem_x[highlightedmenuitem-1]+TILESIZE/2, menu_y+menuitem_y[highlightedmenuitem-1]+TILESIZE);
@@ -292,26 +340,8 @@ void Blockenspiel::paint(SDL_Surface *s){
                 string tb[] = {"Level complete!" , "Click to continue..."};
                 drawTextBoxCentered(s, tb, 2, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]);
             } else {
-                string tb[] = { "Way to go, you finished the game!", 
-                                "",
-                                "Kind of anticlimatic, isn't it? No final boss, no",
-                                "epic ending sequence, just a boring old text box :(",
-                                "Sorry, I'm not Nintendo. I can't be bothered to make",
-                                "a fancy ending. I'm just one guy, and I have a",
-                                "day job, you know.",
-                                "",
-                                "Still, I hope you liked the game! If you're some kind",
-                                "of masochist, and you're still itching for more levels,",
-                                "please make your own! The map file is in a simple text",
-                                "format, and you can edit it with notepad. Send me your",
-                                "cool homemade levels, and I'll include them in the next",
-                                "version of the game.",
-                                "",
-                                "For feedback, level suggestions, love letters, death",
-                                "threats, Nigerian prince scams, etc, please email me",
-                                "at ashenfie@gmail.com"
-                                };
-                drawTextBox(s, tb, 18, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]/2);            
+                string tb[] = { "You win!"};
+                drawTextBox(s, tb, 1, font, screen_x[0][0]+TILESIZE/2, screen_y[0][0][0]/2);            
             }
 		} else if (state == MSG_LEVELFAILED){
             string tb[] = {"Unmatched block remaining!", "Level failed", " ", "Undo last move or retry level..."};
@@ -360,7 +390,7 @@ void Blockenspiel::paint(SDL_Surface *s){
 	}
 
     if(state == FADE_IN || state == FADE_OUT){ 
-        SDL_SetAlpha(fadeImg, SDL_SRCALPHA, fadeAlpha);
+        SDL_SetSurfaceAlphaMod(fadeImg, fadeAlpha);
         blitSurface(fadeImg, s, 0, 0);
     }
 }
@@ -421,13 +451,13 @@ void Blockenspiel::drawblock(int x, int y, int z, SDL_Surface *s){
         blitSurface(blockImgs[block-1], s, drawX, drawY);
         //cout << map->nearestBlockCoordSum << " "<< map->nearestBlockCoordSum*4 << " " << map->nearestBlockCoordSum*4 - (x+y+z)*4 << endl;
         if(map->nearestBlockCoordSum > x+y+z){
-		    SDL_SetAlpha(blockDarkenImgs[block-1], SDL_SRCALPHA, (map->nearestBlockCoordSum - (x+y+z))*10);
+		    SDL_SetSurfaceAlphaMod(blockDarkenImgs[block-1], (map->nearestBlockCoordSum - (x+y+z))*10);
 		    blitSurface(blockDarkenImgs[block-1],s,drawX,drawY);
         }
 
 		//draw white-outing blocks
 		if (state == REMOVING_BLOCKS && removeGroup->getData(x,y,z) != 0){
-            SDL_SetAlpha(blockWhiteImg, SDL_SRCALPHA, disappearingBlockAlpha);
+            SDL_SetSurfaceAlphaMod(blockWhiteImg, disappearingBlockAlpha);
 			blitSurface(blockWhiteImg,s,screen_x[y][x] ,screen_y[z][y][x]);
 		}
 			
@@ -435,7 +465,7 @@ void Blockenspiel::drawblock(int x, int y, int z, SDL_Surface *s){
 		if ((state == SELECTING_BLOCK && underMouseBlock.x == x && underMouseBlock.y == y  && underMouseBlock.z == z)||
 			(state == SELECTING_DESTINATION && selectedBlock.x == x && selectedBlock.y == y  && selectedBlock.z == z))
         { 
-            SDL_SetAlpha(selectorImg, SDL_SRCALPHA, 128);
+            SDL_SetSurfaceAlphaMod(selectorImg, 128);
             blitSurface(selectorImg,s,screen_x[y][x] ,screen_y[z][y][x]);
 		}
 		
@@ -443,7 +473,7 @@ void Blockenspiel::drawblock(int x, int y, int z, SDL_Surface *s){
 		
     if (state == SELECTING_DESTINATION){
 		if ( selectedBlock.z == z && litUpBlocks[x][y]==true){
-            SDL_SetAlpha(highlightImg, SDL_SRCALPHA, 128);
+            SDL_SetSurfaceAlphaMod(highlightImg, 128);
             blitSurface(highlightImg,s,screen_x[y][x] ,screen_y[z][y][x]);
 		}
 	}
@@ -919,11 +949,6 @@ void Blockenspiel::moveFinished(){
 
 void Blockenspiel::updateProgressFile(int levelcompleted){
     time_t t = time(0);
-    struct tm *now = localtime( &t );
-    cout <<"now " << (now->tm_year + 1900) << '-' 
-         << (now->tm_mon + 1) << '-'
-         <<  now->tm_mday
-         << endl;
     finishedlevels[levelcompleted].isCompleted = true;
     finishedlevels[levelcompleted].completionTime = *localtime( &t );
 

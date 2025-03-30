@@ -1,4 +1,5 @@
 #include <fstream>
+#include <cstring>
 #include "blockedin.hpp"
 
 LevelMap::LevelMap (int l, int w, int h):length(l),width(w),height(h),nearestBlockCoordSum(0){
@@ -14,7 +15,7 @@ LevelMap::LevelMap (int l, int w, int h):length(l),width(w),height(h),nearestBlo
 
 LevelMap::LevelMap (ifstream &mapfile, string name) : name(name), nearestBlockCoordSum(0){
     mapfile >> length >> width >> height;
-    cout << "Loaded level " <<name << " lwh:" << length << width << height <<endl;
+    lprint << "Loaded level " << name << " lwh:" << length << width << height << endl;
 
     data = new char[length * width * height];
     for (int z=0; z<height; z++){
@@ -24,11 +25,11 @@ LevelMap::LevelMap (ifstream &mapfile, string name) : name(name), nearestBlockCo
 				mapfile >> temp;  
                 *getDataPtr(x,y,z) = (char) temp;
                 if( temp && nearestBlockCoordSum < x+y+z) nearestBlockCoordSum = x+y+z;
-                //cout << (int) *getDataPtr(x,y,z) << " ";
+                //lprint << (int) *getDataPtr(x,y,z) << " ";
             }
-            //cout << endl;
+            //lprint << endl;
         }
-        //cout << endl;
+        //lprint << endl;
     }
 }
 

@@ -1,51 +1,53 @@
+#include <iostream>
+#include <iomanip>
 #include "blockedin.hpp"
-
 
 /* for debugging*/
 void dumpsurf(SDL_Surface *s){
-    cout << "dumpsurf " << std::hex << (unsigned) s->flags << " "
-            << (unsigned) s->format->BitsPerPixel << " " 
-            << (unsigned) s->format->BytesPerPixel << " " << endl;
-    if(s->flags & SDL_SRCCOLORKEY){
-        cout << " colorkey: " << hex << (unsigned)s->format->colorkey << endl;
+    lprint << "dumpsurf " << std::hex << (unsigned) s->flags << " "
+           << (unsigned) s->format->BitsPerPixel << " " 
+           << (unsigned) s->format->BytesPerPixel << " " << endl;
+    
+    // Check if there's a color key set
+    Uint32 colorKey;
+    if (SDL_GetColorKey(s, &colorKey) == 0) {
+        lprint << " colorkey: " << std::hex << (unsigned)colorKey << endl;
     }
-    cout << (unsigned) s->format->Rloss << " "
-            << (unsigned) s->format->Gloss << " "
-            << (unsigned) s->format->Bloss << " "
-            << (unsigned) s->format->Aloss << " "<< endl
-            << (unsigned) s->format->Rshift << " "
-            << (unsigned) s->format->Gshift << " "
-            << (unsigned) s->format->Bshift << " "
-            << (unsigned) s->format->Ashift << " "<< endl
-            << (unsigned) s->format->Rmask << " "
-            << (unsigned)  s->format->Gmask << " "
-            << (unsigned) s->format->Bmask << " "
-            << (unsigned) s->format->Amask << " "
-            << endl;
+    
+    lprint << (unsigned) s->format->Rloss << " "
+           << (unsigned) s->format->Gloss << " "
+           << (unsigned) s->format->Bloss << " "
+           << (unsigned) s->format->Aloss << " "<< endl
+           << (unsigned) s->format->Rshift << " "
+           << (unsigned) s->format->Gshift << " "
+           << (unsigned) s->format->Bshift << " "
+           << (unsigned) s->format->Ashift << " "<< endl
+           << (unsigned) s->format->Rmask << " "
+           << (unsigned)  s->format->Gmask << " "
+           << (unsigned) s->format->Bmask << " "
+           << (unsigned) s->format->Amask << " "
+           << endl;
 }
 
-SDL_Surface *getImage( std::string filename )
+SDL_Surface *getImage(std::string filename)
 {
     SDL_Surface* loadedImage = NULL;
     SDL_Surface* optimizedImage = NULL;
 
-    loadedImage = IMG_Load( filename.c_str() );
+    loadedImage = IMG_Load(filename.c_str());
 
-
-    if( loadedImage != NULL )
+    if(loadedImage != NULL)
     {
-        //This creates an image withotu an alpha channel: 
-        //It has flags SDL_SRCCOLORKEY|SDL_SRCALPHA, so the transparent pixels are colour keyed, and we can use global alpha as well. 
-        //I tried using SDL_DisplayFormatAlpha, but this created an alpha channel for the image, and I wasn't able to use global alpha.
-        optimizedImage = SDL_DisplayFormat( loadedImage );
-        if(!(optimizedImage->flags & SDL_SRCCOLORKEY)){
-            cerr << "ERROR: (" << filename <<") colour key image expected!" << endl;
-        }
-        //cout << "loaded " << filename << " " << hex << *((Uint32 *)optimizedImage->pixels)<<endl;
-        //dumpsurf(optimizedImage);
-        SDL_FreeSurface( loadedImage );
+        // In SDL2, SDL_DisplayFormat is removed
+        // Instead we convert surface to the display format using SDL_ConvertSurface
+        optimizedImage = SDL_ConvertSurfaceFormat(loadedImage, SDL_PIXELFORMAT_RGBA8888, 0);
+        
+        // Set color key for transparency (in SDL2 this is different)
+        SDL_SetColorKey(optimizedImage, SDL_TRUE, SDL_MapRGB(optimizedImage->format, 0, 0, 0));
+        
+        SDL_FreeSurface(loadedImage);
     } else {
-        //cout << "failed to load " << filename << endl;
+        lprint << "failed to load " << filename << endl;
         return NULL;
     }
     //Return the optimized image
@@ -54,25 +56,32 @@ SDL_Surface *getImage( std::string filename )
 
 SDL_Surface *createSurface(int w, int h)
 {
-    Uint32 rmask, gmask, bmask;
-    SDL_Surface *temp, *temp2;
+    Uint32 rmask, gmask, bmask, amask;
     /* SDL interprets each pixel as a 32-bit number, so our masks must depend
        on the endianness (byte order) of the machine */
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
     rmask = 0xff000000;
     gmask = 0x00ff0000;
-    bmask = 0x0000ff00; 
+    bmask = 0x0000ff00;
+    amask = 0x000000ff;
 #else
     rmask = 0x000000ff;
     gmask = 0x0000ff00;
     bmask = 0x00ff0000;
-
+    amask = 0xff000000;
 #endif
 
-    temp = SDL_CreateRGBSurface(SDL_SRCCOLORKEY, w, h, 32, rmask, gmask, bmask, 0); 
-    temp2 = SDL_DisplayFormat(temp);
-    SDL_FreeSurface(temp);
-    return temp2;
+    // In SDL2, SDL_SRCCOLORKEY flag is replaced with SDL_SetColorKey
+    SDL_Surface *surface = SDL_CreateRGBSurface(0, w, h, 32, rmask, gmask, bmask, amask);
+    
+    // Set color key for transparency
+    if (surface) {
+        SDL_SetColorKey(surface, SDL_TRUE, 0xFFFFFFFF);
+        // Make sure alpha blending is available on this surface
+        SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_BLEND);
+    }
+    
+    return surface;
 }
 
 void blitSurface(SDL_Surface *src, SDL_Surface *dst, int x, int y){
@@ -80,8 +89,8 @@ void blitSurface(SDL_Surface *src, SDL_Surface *dst, int x, int y){
 
     rect.x = x;
     rect.y = y;
-    rect.w = dst->w;
-    rect.h = dst->h;
+    rect.w = src->w;
+    rect.h = src->h;
     SDL_BlitSurface(src, NULL, dst, &rect);
 }
 
@@ -95,14 +104,14 @@ void blitClippedSurface(SDL_Surface *src, int x1, int y1, int w1, int h1, SDL_Su
 
     rect_dst.x = x2;
     rect_dst.y = y2;
-    rect_dst.w = dst->w;
-    rect_dst.h = dst->h;
+    rect_dst.w = w1;
+    rect_dst.h = h1;
     SDL_BlitSurface(src, &rect_src, dst, &rect_dst);
 }
 
 SDL_Surface *getImageFromTexMap(SDL_Surface *tm, int x, int y, int w, int h){
     SDL_Surface *dst = createSurface(w,h); 
-    SDL_SetColorKey( dst, SDL_RLEACCEL | SDL_SRCCOLORKEY, 0 );
+    SDL_SetColorKey(dst, SDL_TRUE, 0);
     blitClippedSurface(tm, x, y, w, h, dst, 0, 0);
 
     return dst;
@@ -117,7 +126,13 @@ bool isPixelTransparent(SDL_Surface *s, int x, int y){
     SDL_LockSurface(s);
     Uint32 val = *getPixelPtr(s,x,y);
     SDL_UnlockSurface(s);
-    return val == s->format->colorkey;
+    
+    // Use SDL_GetColorKey instead of accessing colorkey directly
+    Uint32 colorKey;
+    if (SDL_GetColorKey(s, &colorKey) == 0) {
+        return val == colorKey;
+    }
+    return false;
 }
 
 void shrinkSurface(SDL_Surface *s, SDL_Surface *d)
@@ -171,8 +186,8 @@ void drawTextBox(SDL_Surface *dst, const string s[], int numLines, TTF_Font *fon
     }
 
     SDL_Surface *bg = createSurface(max_w + 8, h*numLines);
-    SDL_FillRect(bg, NULL, 0);
-    SDL_SetAlpha(bg, SDL_SRCALPHA, 128);
+    SDL_FillRect(bg, NULL, SDL_MapRGBA(bg->format, 0, 0, 0, 255));
+    SDL_SetSurfaceAlphaMod(bg, 128);
     x -= bg->w/2;
     blitSurface(bg, dst, x, y);
     SDL_FreeSurface(bg);
@@ -197,8 +212,10 @@ void drawTextBoxCentered(SDL_Surface *dst, const string s[], int numLines, TTF_F
     }
 
     SDL_Surface *bg = createSurface(max_w + 8, h*numLines);
-    SDL_FillRect(bg, NULL, 0);
-    SDL_SetAlpha(bg, SDL_SRCALPHA, 128);
+    SDL_FillRect(bg, NULL, SDL_MapRGBA(bg->format, 0, 0, 0, 255));
+    SDL_SetSurfaceAlphaMod(bg, 128);
+    lprint << "bg: " << bg->w << " " << bg->h << endl;
+    dumpsurf(bg);
     blitSurface(bg, dst, x - bg->w/2, y);
     SDL_FreeSurface(bg);
 

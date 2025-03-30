@@ -4,10 +4,44 @@
 #include <vector>
 #include <stack>
 using namespace std;
-#include "SDL/SDL.h"
-#include "SDL/SDL_thread.h"
-#include "SDL/SDL_image.h"
-#include <SDL/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_thread.h>
+#include <SDL_image.h>
+#include <SDL_ttf.h>
+
+// Logger class for handling log output
+class Logger {
+public:
+    ofstream logFile;
+    
+    Logger() {
+        logFile.open("log.txt", ios::out | ios::trunc);
+    }
+    
+    ~Logger() {
+        if (logFile.is_open()) {
+            logFile.close();
+        }
+    }
+    
+    template <typename T>
+    Logger& operator<<(const T& message) {
+        logFile << message;
+        return *this;
+    }
+    
+    Logger& operator<<(ostream& (*manip)(ostream&)) {
+        manip(logFile);
+        return *this;
+    }
+};
+
+// Global logger instance
+extern Logger gLogger;
+
+// Define a macro for logging - with endl support
+#define lprint gLogger
+#define endl std::endl
 
 #define TILESIZE 64
 #define NUM_MENU_BUTTONS 5
@@ -115,14 +149,20 @@ class Blockenspiel {
         arrowLength(0),
         repaintRequest(false),
         animationRequest(false),
-        highlightedmenuitem(0){};
-
+        highlightedmenuitem(0),
+        window(NULL),
+        renderer(NULL) {};
+        
 	int originX, originY;
     TTF_Font *font;	
 
 	//state variables
     Screen screen;
 	State state;
+    
+    // SDL2 specific objects
+    SDL_Window *window;
+    SDL_Renderer *renderer;
 
     //variables for level select screen
     SDL_Surface *logoImg;

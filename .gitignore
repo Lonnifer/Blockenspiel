@@ -1,0 +1,9 @@
+SDL2-2.32.2/*
+SDL2_image-2.8.8/*
+SDL2_ttf-2.24.0/*
+*.o
+_out/*
+.cache/*
+.cursor/*
+.vscode/*
+*.dll
